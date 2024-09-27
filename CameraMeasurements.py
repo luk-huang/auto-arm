@@ -73,6 +73,17 @@ class CameraMeasurements(MeasurementTool):
         if not ret1 or not ret2:
             raise RuntimeError("Failed to capture frames from both cameras.")
         
+        # Convert frames to grayscale
+        gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
+        gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
+
+        # Display the grayscale images
+        cv2.imshow('Camera 1 - Grayscale', gray1)
+        cv2.imshow('Camera 2 - Grayscale', gray2)
+
+        # Wait for a short period to update the display
+        cv2.waitKey(1)
+
         corners1, id1 = detect_aruco(frame1, target_id)
         corners2, id2 = detect_aruco(frame2, target_id)
 
@@ -141,12 +152,18 @@ def main():
     camera_measurements = CameraMeasurements()
 
     try:
-        # Find the pose of the target marker
-        avg_rvec, avg_tvec = camera_measurements.find_pose(target_id)
-        print("Averaged Rotation Vector:\n", avg_rvec)
-        print("Averaged Translation Vector:\n", avg_tvec)
+        while True:
+            # Find the pose of the target marker and display grayscale images
+            avg_rvec, avg_tvec = camera_measurements.find_pose(target_id)
+            print("Averaged Rotation Vector:\n", avg_rvec)
+            print("Averaged Translation Vector:\n", avg_tvec)
+
+            # Press 'q' to exit the loop
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
     except Exception as e:
         print(f"An error occurred: {e}")
-        
+
 if __name__ == '__main__':
     main()
