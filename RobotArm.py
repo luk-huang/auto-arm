@@ -228,3 +228,31 @@ class RobotArm:
         if self.ena_pin2 is not None:
             self.board.digital[self.ena_pin2].write(1)  # Disable the driver
         self.board
+
+
+def main():
+    # Initialize the RobotArm class with xArm IP and Arduino port
+    arm = RobotArm(ip='192.168.1.1', arduino_port='COM4')  # Adjust IP and port as needed
+
+    try:
+        # Test rotating Motor 1
+        print("Rotating Motor 1 in one direction (2 revolutions)...")
+        arm.rotate_motor(motor_id=1, revolutions=2, direction=True, speed_rpm=60)  # Rotate Motor 1 clockwise
+        print("Rotating Motor 1 in the opposite direction (2 revolutions)...")
+        arm.rotate_motor(motor_id=1, revolutions=2, direction=False, speed_rpm=60)  # Rotate Motor 1 counter-clockwise
+        
+        # Test rotating Motor 2
+        print("Rotating Motor 2 in one direction (1 revolution)...")
+        arm.rotate_motor(motor_id=2, revolutions=1, direction=True, speed_rpm=30)  # Rotate Motor 2 clockwise
+        print("Rotating Motor 2 in the opposite direction (1 revolution)...")
+        arm.rotate_motor(motor_id=2, revolutions=1, direction=False, speed_rpm=30)  # Rotate Motor 2 counter-clockwise
+
+    except KeyboardInterrupt:
+        print("Operation interrupted by user.")
+
+    finally:
+        # Close connections and reset pins if needed
+        arm.close()
+
+if __name__ == '__main__':
+    main()
