@@ -107,73 +107,12 @@ class CameraMeasurements(MeasurementTool):
     def measureBeamWidth(self, tvec):
         pass
 
-def handle_err_warn_changed(item):
-    print('ErrorCode: {}, WarnCode: {}'.format(item['error_code'], item['warn_code']))
-
-def setup_xarm(ip=None):
-    """
-    Set up the xArm by initializing it with the correct IP address.
-    If an IP address is not provided, it will attempt to retrieve it from
-    command line arguments, a configuration file, or prompt the user.
-
-    :param ip: Optional; the IP address of the xArm.
-    :return: The initialized xArmAPI object.
-    """
-    if not ip:
-        # Check if IP is provided via command line arguments
-        if len(sys.argv) >= 2:
-            ip = sys.argv[1]
-        else:
-            # Attempt to get IP from configuration file
-            try:
-                from configparser import ConfigParser
-                parser = ConfigParser()
-                parser.read('../robot.conf')
-                ip = parser.get('xArm', 'ip')
-            except Exception as e:
-                print(f"Error reading IP from config file: {e}")
-                ip = input('Please input the xArm IP address: ')
-                if not ip:
-                    print('Input error, exiting.')
-                    sys.exit(1)
-
-    # Initialize the xArm with the given IP address
-    arm = XArmAPI(ip)
-    arm.motion_enable(enable=True)
-    arm.set_mode(0)
-    arm.set_state(state=0)
-    arm.register_error_warn_changed_callback(handle_err_warn_changed)
-    print("xArm initialization done.")
-    return arm
-
-def start(arm):
-    """
-    Additional setup for the xArm, including gripper installation and setting TCP load.
-    """
-    try:
-        # Install xArm Gripper
-        print("Initializing additional settings for the xArm...")
-        code = arm.set_counter_reset()
-        print("Counter reset code:", code)
-        weight = 0.610 
-        center_of_gravity = (0.06125, 0.0458, 0.0375) 
-        arm.set_tcp_load(weight=weight, center_of_gravity=center_of_gravity)
-        code = arm.set_servo_angle(angle=[180, 75, -180, 20, 0, 90, -60], is_radian=False, speed=30, wait=True)
-        print("xArm setup completed successfully.")
-
-    except Exception as e:
-        print('MainException:', e)
-
 def main():
     """
     Main method to test the CameraMeasurements class and set up the robotic arm.
     """
-    # Provide the IP directly if known, or let setup_xarm handle obtaining it
-    ip = sys.argv[1] if len(sys.argv) >= 2 else None  # Use IP from command line if available
-    arm = setup_xarm(ip)  # Pass the IP to setup_xarm
-
-    # Call the start function to perform additional xArm setup
-    start(arm)
+    # Initialize the RobotArm object
+    arm = RobotArm()  # You can pass an IP if needed, or let it handle the setup process
 
     # Set the target ArUco marker ID
     target_id = 4  
@@ -187,6 +126,16 @@ def main():
             avg_rvec, avg_tvec = camera_measurements.find_pose(target_id)
             print("Averaged Rotation Vector:\n", avg_rvec)
             print("Averaged Translation Vector:\n", avg_tvec)
+
+            # Example use of the RobotArm class
+            mem = avg_tvec.flatten().tolist()
+            mem.extend([-180, 0, 0])
+            mem[0] = -mem[0] * 1000
+            mem[1] = mem[1] * 1000
+            mem[2] = (1.2 - mem[2]) * 1000
+
+            # Move the arm to the detected position
+            arm.moveArmTo(mem)
 
             # Press 'q' to exit the loop
             if cv2.waitKey(1) & 0xFF == ord('q'):
