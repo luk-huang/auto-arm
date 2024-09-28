@@ -17,13 +17,15 @@ class RobotArm:
             The IP address of the xArm. If not provided, the IP will be obtained from the command line
             or configuration file.
         arduino_port : str, optional
-            The port where the Arduino is connected (default is 'COM4').
+            The port where the Arduino is connected (Supposed to be 'COM4'). May change later.
 
         Returns
         -------
         None
         """
-        self.setup_xarm(ip)
+        # Set up the xArm 
+        self.setup_xarm(ip) 
+        # Set up the Arduino
         self.setup_arduino(arduino_port)
         self.start()
 
@@ -215,6 +217,7 @@ class RobotArm:
         self.arm.set_servo_angle(angle=[180, 75, -180, 20, 0, 90, -60], speed=100, is_radian=False, wait=True)
         print("Arm moved to the specified coordinates.")
 
+    
     def close(self):
         """
         Close the Arduino and xArm connections properly.
@@ -232,7 +235,7 @@ class RobotArm:
 
 def main():
     # Initialize the RobotArm class with xArm IP and Arduino port
-    arm = RobotArm(ip='192.168.1.1', arduino_port='COM4')  # Adjust IP and port as needed
+    arm = RobotArm(ip='192.168.1.241', arduino_port='COM4')  # Adjust IP and port as needed
 
     try:
         # Test rotating Motor 1
