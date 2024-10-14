@@ -327,14 +327,17 @@ class Processing:
         
         return np.matmul(np.matmul(S, P_zero), S.T)
     
+    # Compute M_squared given Final Beam Matrix
     @staticmethod 
     def compute_m_squared(P, wavelength):
         return 4 * np.pi / wavelength * (np.linalg.det(P)) ** (1/4)
     
+    # Compute Twist given Final Beam Matrix
     @staticmethod 
     def compute_twist(P):
         return P[0, 3] - P[1, 2]
 
+    # Compute Intrinsic Astigmatism given Final Beam Matrix
     @staticmethod
     def compute_intrinsic_astigmatism(P, wavelength):
         M_squared = Processing.compute_m_squared(P, wavelength)
@@ -345,27 +348,28 @@ class Processing:
         a = 8 * (np.pi ** 2) / wavelength * (a_x + a_y) + 2*a_xy - M_squared ** 2
         return a
 
+    # Compute Parameters if Beam is Stigmatic 
     @staticmethod
     def compute_stigmatic_parameters(Z, width, wavelength):
         # Fit a quadratic to the beam width squared (d^2 as a function of z)
         width_squared = width ** 2
         width_coef = np.polyfit(Z, width_squared, 2)  # Fit a quadratic to w(z)^2
         
-        # Coefficients of the quadratic fit: a*z^2 + b*z + c
-        a = width_coef[0]
+        # Coefficients of the quadratic fit: a + bz + cz^2
+        a = width_coef[2]
         b = width_coef[1]
-        c = width_coef[2]
+        c = width_coef[0]
         
         # Calculating the beam parameters
-        z_zero = -b / (2 * a)  # Beam waist location
-        d_sigma_zero = np.sqrt(c)  # Beam waist size (sqrt of the constant term)
-        theta_sigma = np.sqrt(a)  # Beam divergence angle (related to a)
-        z_rayleigh = np.sqrt(c) / np.sqrt(a)  # Rayleigh range
+        z_zero = -b / (2 * c)  # Beam waist location
+        d_sigma_zero = 1 / (2 * np.sqrt(c)) * np.sqrt(4 * a * c - b ** 2) # Beam Waist 
+        theta_sigma = np.sqrt(c)  # Beam divergence angle 
+        z_rayleigh = 1 / (2 * c) * np.sqrt(4 * a * c - b ** 2)  # Rayleigh range
         
         # Calculate M^2
         M_squared = np.pi / (8 * wavelength) * np.sqrt(4 * a * c - b ** 2)
 
-        return M_squared, d_sigma_zero, theta_sigma, z_rayleigh, z_zero
+        return M_squared, d_sigma_zero, theta_sigma, z_rayleigh, z_zero, c, b, a
 
 
 def gaussian_beam_test():
@@ -381,16 +385,12 @@ def gaussian_beam_test():
 
     # Parameters of the Gaussian beam
     A = 1.0              # Peak intensity at the waist
-    w0_px = 80              # Beam waist radius in pixels (smallest beam size)
+    w0_px = 50             # Beam waist radius in pixels (smallest beam size)
     w0_m = w0_px * pixel_size_m 
-    lambda_m = 532e-9       # Wavelength (in micrometers, for example)
+    lambda_m = 532e-9       # Wavelength in m
 
     # Derived Rayleigh range
     z_R = np.pi * (w0_m) ** 2 / lambda_m
-
-    # Image dimensions (640x480)
-    image_width = 640
-    image_height = 480
 
     # Create grid of coordinates
     x = np.linspace(-image_width // 2, image_width // 2, image_width)
@@ -400,21 +400,24 @@ def gaussian_beam_test():
     def gaussian_beam_intensity(x, y, z, w0_px, z_R, A=1.0):
         w_z_px = w0_px * np.sqrt(1 + (z / z_R)**2)  # Beam radius at z
         intensity = A * (w0_px / w_z_px)**2 * np.exp(-2 * (x**2 + y**2) / w_z_px**2)
-        return intensity
+        return intensity, w_z_px
+    
+    theoretical_widths = []
     
     def create_gaussian_beam_rgb_images(x, y, z_values, w0_px, z_R, A=1.0):
-        # Step 1: Find the global maximum intensity across all z-values for consistent scaling
+        # Find the global maximum intensity across all z-values for consistent scaling
         global_max_intensity = 0
         for z in z_values:
-            intensity = gaussian_beam_intensity(x, y, z, w0_px, z_R, A)
+            intensity, w_z_px = gaussian_beam_intensity(x, y, z, w0_px, z_R, A)
+            theoretical_widths.append(w_z_px * pixel_size_m)
             max_intensity = np.max(intensity)
             if max_intensity > global_max_intensity:
                 global_max_intensity = max_intensity
 
-        # Step 2: Create the RGB images by normalizing intensity values
+        # Create the RGB images by normalizing intensity values
         rgb_images = []
         for z in z_values:
-            intensity = gaussian_beam_intensity(x, y, z, w0_px, z_R, A)
+            intensity, _ = gaussian_beam_intensity(x, y, z, w0_px, z_R, A)
             
             # Normalize by the global maximum intensity
             intensity_normalized = intensity / global_max_intensity * 255
@@ -425,38 +428,35 @@ def gaussian_beam_test():
             # Create an RGB image by stacking the intensity for all channels
             rgb_image = np.stack([intensity_gray, intensity_gray, intensity_gray], axis=-1)  # (H, W, 3)
             
-            # Optionally, you could apply different intensities to each channel for color variation
-            # e.g., for Red channel: np.stack([intensity_gray, np.zeros_like(intensity_gray), np.zeros_like(intensity_gray)], axis=-1)
-            
             # Append the RGB image to the list
             rgb_images.append(rgb_image)
         
         return rgb_images
     
-    z_values = np.linspace(-3*z_R, 3*z_R, num_images)  # From -2 Rayleigh range to +2 Rayleigh range
-
+    # From -3 Rayleigh range to +3 Rayleigh range
+    z_values = np.linspace(-2*z_R, 2*z_R, num_images)  
     images = create_gaussian_beam_rgb_images(x, y, z_values, w0_px, z_R, A)
 
-    X = np.ndarray((num_images,), dtype=np.float32)
-    Y = np.ndarray((num_images,), dtype=np.float32)
-    phi_array = np.ndarray((num_images,), dtype = np.float32)
-    width_array = np.ndarray((num_images,), dtype=np.float32)  # Beam width array
+    X = np.zeros((num_images,), dtype=np.float64)
+    Y = np.zeros((num_images,), dtype=np.float64)
+    phi_array = np.zeros((num_images,), dtype=np.float64)
+    width_array = np.zeros((num_images,), dtype=np.float64)
 
     # Loop through z-values to generate Gaussian beam images at each z-distance
     for i, z in enumerate(z_values):
         frame = images[i]
         # Find the laser center in the averaged frame
         d_sigma_x_m, d_sigma_y_m, phi, cX_m, cY_m = Processing.compute_beam_parameters(frame, 
-                                                                                           max_iterations=20, 
+                                                                                           max_iterations=0, 
                                                                                            convergence_threshold=0.01, 
                                                                                            pixel_size=pixel_size_m)
         beam_width_m = np.sqrt((d_sigma_x_m**2 + d_sigma_y_m**2) * 0.5)  # Calculate beam width from d_sigma_x_
         # Store the averaged values in the arrays (still in m for X, Z, Width)
-        X[i-1], Y[i-1] = cX_m, cY_m
-        width_array[i-1] = beam_width_m
-        phi_array[i-1] = np.float32(phi)
+        X[i], Y[i] = cX_m, cY_m
+        width_array[i] = beam_width_m
+        phi_array[i] = np.float64(phi)
 
-        plot_frames = [40, 50, 60]
+        plot_frames = [60]
 
         if i in plot_frames:
             # Convert the frame to RGB if it's grayscale for visualization
@@ -489,11 +489,16 @@ def gaussian_beam_test():
             # Show the plot
             plt.show()
 
+
     # Call plotXY to plot X, Y vs Z (3D plot)
     plotXY(X, Y, z_values)
 
+    print("Actual values")
+    print("z_0: " + str(0))
+    print("z_rayleigh: " + str(z_R))
+
     # _, _, beam_divergence_angle = Processing.compute_m_squared(Y, width, wavelength=532e-9)
-    plot_M_squared(z_values, width_array, lambda_m)
+    plot_M_squared(z_values, width_array, lambda_m, theoretical_widths)
 
     
 
@@ -619,18 +624,24 @@ def plot_frame(frame, image_width, image_height):
 
     plt.show()
 
-def plot_M_squared(Z, width, wavelength=532e-9):
+def plot_M_squared(Z, width, wavelength, theoretical_widths):
     # Compute M², min width, and beam divergence using the compute_m_squared method
-    M_squared, min_width_m, beam_divergence, _, _ = Processing.compute_stigmatic_parameters(Z, width, wavelength)
+    M_squared, min_width_m, beam_divergence, z_rayleigh, z_zero, c, b, a = Processing.compute_stigmatic_parameters(Z, width, wavelength)
 
-    # Plot the original and smoothed data
-    plt.figure()
-    plt.scatter(Z, width, label='Beam Width vs Z')
+    # Plot data points
+    plt.scatter(Z, width ** 2, label="Data points")
 
-    # Labeling the plot
-    plt.xlabel('Y axis (m)')
-    plt.ylabel('Beam Width (m)')
-    plt.title('Beam Width vs Z with Minimum Point and M² Factor = ' + str(M_squared))
+    # Plot the fitted quadratic curve
+    Z_fit = np.linspace(min(Z), max(Z), 100)
+    theoretical_widths = np.array(theoretical_widths)
+    width_fit = c * Z_fit**2 + b * Z_fit + a
+    plt.plot(Z_fit, width_fit, label="Fitted curve", color='r')
+    plt.plot(Z_fit, 4 * theoretical_widths ** 2, label = "Theory", color = 'b')
+
+    plt.xlabel("Z (Propagation distance)")
+    plt.ylabel("Beam Width Squared (w(z)^2)")
+
+    plt.title('M² Factor = ' + str(M_squared))
     plt.legend()
     plt.grid(True)
 
@@ -641,7 +652,6 @@ def plot_M_squared(Z, width, wavelength=532e-9):
     print(f"M² = {M_squared:.2f}")
     print(f"Minimum Beam Width (m) = {min_width_m:.5f} m")
     print(f"Beam Divergence (radians) = {beam_divergence:.5f}")
-
 
 def plotXY(X, Y, Z_values):
     # 3D Plot for X, Y vs Z
